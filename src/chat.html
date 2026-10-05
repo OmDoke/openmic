@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html style="background: transparent;">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Chat</title>
+    <link href="./styles/common.css" rel="stylesheet" />
+    <!-- PrismJS theme for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/themes/prism-tomorrow.min.css" />
+    <style>
+      /* Font Awesome now loaded via <link> above */
+
+      body {
+        background: transparent !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      }
+
+      .chat-container {
+        width: 100%;
+        height: 100vh;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 0, 0, 0.3) 0%,
+          rgba(20, 20, 20, 0.4) 100%
+        );
+        backdrop-filter: blur(25px);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        -webkit-app-region: drag;
+      }
+      .chat-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        -webkit-app-region: drag;
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        cursor: move;
+        flex-shrink: 0;
+      }
+      .header-title {
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+      }
+      /* Header actions (e.g., Clear History) */
+      .header-actions {
+        -webkit-app-region: no-drag;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .icon-button {
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: rgba(255, 255, 255, 0.9);
+        border-radius: 6px;
+        padding: 6px 10px;
+        cursor: default;
+        transition: all 0.2s ease;
+      }
+      .icon-button:hover {
+        background: rgba(255, 255, 255, 0.22);
+        color: #fff;
+      }
+      .recording-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ff4757;
+        animation: pulse 2s infinite;
+        display: none;
+        box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+      }
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.7;
+          transform: scale(1.1);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      .chat-messages {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-app-region: no-drag;
+        box-sizing: border-box;
+        /* Removed max-height restriction */
+      }
+      .message {
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        border-left: 3px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+        word-wrap: break-word;
+        word-break: break-word;
+        /* Removed all height restrictions */
+        position: relative;
+      }
+      .message.transcription {
+        background: rgba(76, 175, 80, 0.15);
+        animation: fadeInSlide 0.1s ease-out;
+        position: relative;
+      }
+
+      .message.transcription::before {
+        position: absolute;
+        left: -8px;
+        top: 8px;
+        font-size: 12px;
+        color: white;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      @keyframes fadeInSlide {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+          background: rgba(76, 175, 80, 0.3);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+          background: rgba(76, 175, 80, 0.15);
+        }
+      }
+      .message.system {
+        background: rgba(33, 150, 243, 0.1);
+      }
+      .message.error {
+        background: rgba(244, 67, 54, 0.1);
+      }
+      .message.user {
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .message.assistant {
+        background: rgba(156, 39, 176, 0.1);
+        border-left: 3px solid #9c27b0;
+        /* Removed all height restrictions and overflow hidden */
+        display: block;
+      }
+      
+      .message.assistant .message-text {
+        /* Removed all height restrictions and overflow hidden */
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Ensure all content in assistant messages is fully visible */
+      .message.assistant *,
+      .message.assistant .bullet-point,
+      .message.assistant .numbered-point,
+      .message.assistant strong,
+      .message.assistant em,
+      .message.assistant code,
+      .message.assistant pre,
+      .message.assistant ul,
+      .message.assistant ol,
+      .message.assistant li,
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6,
+      .message.assistant p,
+      .message.assistant blockquote {
+        /* Remove all height restrictions */
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      
+      /* Markdown formatting for assistant messages */
+      .message.assistant .bullet-point {
+        margin: 4px 0;
+        padding-left: 8px;
+        line-height: 1.4;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point {
+        margin: 4px 0;
+        padding-left: 16px;
+        line-height: 1.4;
+        position: relative;
+        counter-increment: list-counter;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point::before {
+        content: counter(list-counter) ". ";
+        position: absolute;
+        left: 0;
+        font-weight: 500;
+        color: rgba(156, 39, 176, 0.8);
+      }
+      
+      .message.assistant {
+        counter-reset: list-counter;
+      }
+      
+      .message.assistant strong {
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant em {
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      
+      .message.assistant code {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+        display: inline;
+      }
+      
+      /* Ensure code blocks are fully visible */
+      .message.assistant pre {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 8px 0;
+        position: relative;
+      }
+      
+      .message.assistant pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+        display: block;
+      }
+
+      /* Copy button in code blocks */
+      .copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.5);
+        color: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 4px 8px;
+        font-size: 11px;
+        border-radius: 4px;
+        cursor: default;
+        -webkit-app-region: no-drag;
+        transition: background 0.2s ease, border-color 0.2s ease, transform 0.12s ease;
+      }
+      .copy-btn:hover {
+        background: rgba(0,0,0,0.7);
+      }
+      .copy-btn.copied {
+        background: rgba(76, 175, 80, 0.8);
+        border-color: rgba(76, 175, 80, 0.9);
+        transform: scale(0.98);
+      }
+      
+      /* Ensure lists are fully visible */
+      .message.assistant ul,
+      .message.assistant ol {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      
+      .message.assistant li {
+        margin: 4px 0;
+        line-height: 1.4;
+      }
+      
+      /* Ensure headings are fully visible */
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 {
+        margin: 12px 0 8px 0;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant h1 { font-size: 16px; }
+      .message.assistant h2 { font-size: 15px; }
+      .message.assistant h3 { font-size: 14px; }
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 { font-size: 13px; }
+      
+      /* Ensure paragraphs are fully visible */
+      .message.assistant p {
+        margin: 8px 0;
+      }
+      
+      /* Ensure blockquotes are fully visible */
+      .message.assistant blockquote {
+        border-left: 3px solid rgba(156, 39, 176, 0.5);
+        padding-left: 12px;
+        margin: 8px 0;
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      
+      /* Thinking indicator animation */
+      .thinking-dots {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      
+      .thinking-dots .dot {
+        opacity: 0.4;
+        animation: thinking 1.4s infinite ease-in-out;
+      }
+      
+      .thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+      .thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+      .thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+      
+      @keyframes thinking {
+        0%, 80%, 100% {
+          opacity: 0.4;
+          transform: scale(1);
+        }
+        40% {
+          opacity: 1;
+          transform: scale(1.2);
+        }
+      }
+      
+      .message.thinking {
+        animation: fadeIn 0.3s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .message-time {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+      .message-text {
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 13px;
+        line-height: 1.4;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        word-wrap: break-word;
+        word-break: break-word;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+        max-width: 100%;
+        display: block;
+      }
+      .message-text .math {
+        font-family: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', Georgia, serif;
+        white-space: nowrap;
+      }
+      .message-text sup, .message-text sub {
+        font-size: 0.72em;
+        line-height: 0;
+      }
+      .chat-input {
+        padding: 16px 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        -webkit-app-region: no-drag;
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        flex-shrink: 0;
+      }
+      .input-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        -webkit-app-region: no-drag;
+      }
+      .input-field {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 13px;
+        outline: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        /* make it work well as multiline */
+        resize: none;
+        line-height: 1.4;
+        min-height: 32px;
+        max-height: 140px;
+        overflow-y: auto;
+      }
+      .input-field:focus {
+        outline: none;
+      }
+      .input-field::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .send-button {
+        background: rgba(255, 255, 255, 0.15);
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: rgba(255, 255, 255, 0.9);
+        cursor: default;
+        transition: all 0.2s;
+        -webkit-app-region: no-drag;
+      }
+      .send-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 1);
+      }
+      .status-message {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+        padding: 20px;
+        font-style: italic;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .error-message {
+        color: #ff4757;
+        font-size: 12px;
+        padding: 10px;
+        text-align: center;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+      }
+      .mic-button {
+        background: rgba(255, 255, 255, 0.15);
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: rgba(255, 255, 255, 0.9);
+        cursor: default;
+        transition: all 0.2s;
+        -webkit-app-region: no-drag;
+      }
+      .mic-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 1);
+      }
+      .mic-button.recording {
+        background: rgba(255, 71, 87, 0.8);
+        color: white;
+        box-shadow: 0 0 15px rgba(255, 71, 87, 0.4);
+      }
+      .help-text {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 11px;
+        text-align: center;
+        padding: 10px;
+        line-height: 1.4;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .interaction-indicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: rgba(255, 255, 255, 0.9);
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 1000;
+      }
+      .interaction-indicator.show {
+        opacity: 1;
+      }
+      .interaction-indicator.interactive {
+        background: rgba(76, 175, 80, 0.9);
+      }
+      .interaction-indicator.non-interactive {
+        background: rgba(244, 67, 54, 0.9);
+      }
+      .non-interactive .input-container {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .non-interactive .mic-button {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .non-interactive .send-button {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+
+      /* Minimalist Listening Animation */
+      .listening-indicator {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(203, 203, 203, 0.3);
+        border-radius: 20px;
+        padding: 8px 16px;
+        z-index: 1000;
+        pointer-events: none;
+      }
+
+      .listening-indicator.active {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        animation: fadeInUp 0.3s ease-out;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
+        }
+      }
+
+      .listening-wave {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .wave-bar {
+        width: 2px;
+        background: #4caf50;
+        border-radius: 1px;
+        animation: waveAnimation 1.2s infinite ease-in-out;
+      }
+
+      .wave-bar:nth-child(1) {
+        height: 8px;
+        animation-delay: 0s;
+      }
+      .wave-bar:nth-child(2) {
+        height: 12px;
+        animation-delay: 0.15s;
+      }
+      .wave-bar:nth-child(3) {
+        height: 16px;
+        animation-delay: 0.3s;
+      }
+      .wave-bar:nth-child(4) {
+        height: 12px;
+        animation-delay: 0.45s;
+      }
+      .wave-bar:nth-child(5) {
+        height: 8px;
+        animation-delay: 0.6s;
+      }
+
+      @keyframes waveAnimation {
+        0%, 100% {
+          transform: scaleY(0.3);
+          opacity: 0.6;
+        }
+        50% {
+          transform: scaleY(1);
+          opacity: 1;
+        }
+      }
+
+      .listening-text {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+      }
+
+      .listening-duration {
+        color: rgba(76, 175, 80, 0.8);
+        font-size: 10px;
+        font-family: monospace;
+        margin-left: 4px;
+      }
+
+      /* Interim text overlay */
+      .interim-overlay {
+        position: fixed;
+        bottom: 80px;
+        left: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.028);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(76, 175, 80, 0.3);
+        border-radius: 8px;
+        padding: 12px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 12px;
+        font-style: italic;
+        z-index: 999;
+        pointer-events: none;
+        display: none;
+        animation: slideUpFade 0.3s ease-out;
+      }
+
+      .interim-overlay.active {
+        display: block;
+      }
+
+      @keyframes slideUpFade {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    </style>
+  <script src="tauri-bridge.js"></script></head>
+  <body>
+    <div class="chat-container" id="chatContainer">
+      <div class="chat-header">
+        <div class="header-title">
+          <i class="fas fa-microphone"></i>
+          Live Transcription & Chat
+          <div class="recording-indicator" id="recordingIndicator"></div>
+        </div>
+        <div class="header-actions">
+
+          <button class="icon-button" id="clearHistoryBtn">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Interim Text Overlay -->
+      <div class="interim-overlay" id="interimOverlay"></div>
+
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input">
+        <div class="input-container">
+          <textarea
+            class="input-field"
+            placeholder="Type a messageÃ¢â‚¬Â¦ (Shift+Enter for newline)"
+            id="messageInput"
+            rows="1"
+          ></textarea>
+          <button class="mic-button" id="micButton">
+            <i class="fas fa-microphone"></i>
+          </button>
+          <button class="send-button" id="sendButton">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="lib/mathrender.js"></script>
+    <!-- PrismJS core and autoloader for language components -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    
+    <script>
+      // Configure Prism autoloader
+      try { if (window.Prism && Prism.plugins && Prism.plugins.autoloader) { Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/'; } } catch (_) {}
+    </script>
+    <script src="./ui/chat-window.js"></script>
+  </body>
+</html>

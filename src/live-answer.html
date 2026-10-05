@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en" style="background: transparent;">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live Answer</title>
+  <script src="tauri-bridge.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: transparent;
+      height: 100%;
+      width: 100%;
+    }
+
+    body {
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.82) 0%, rgba(15, 15, 20, 0.88) 100%);
+      -webkit-app-region: no-drag;
+      color: white;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      -webkit-app-region: drag;
+      height: 30px;
+      flex-shrink: 0;
+    }
+    .titlebar-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .titlebar-actions {
+      display: flex;
+      gap: 5px;
+      -webkit-app-region: no-drag;
+    }
+    .btn-icon {
+      background: rgba(255,255,255,0.07);
+      border: none;
+      color: rgba(255,255,255,0.5);
+      cursor: default;
+      border-radius: 5px;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-icon:hover { background: rgba(255,255,255,0.16); color: white; }
+
+    .content {
+      height: calc(100vh - 30px);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 14px 16px;
+      -webkit-app-region: no-drag;
+      scroll-behavior: smooth;
+    }
+    .content::-webkit-scrollbar { width: 4px; }
+    .content::-webkit-scrollbar-track { background: transparent; }
+    .content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+    /* Placeholder */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: rgba(255,255,255,0.25);
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    /* Streaming dot */
+    .streaming-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #4ade80;
+      margin-left: 5px;
+      vertical-align: middle;
+      animation: pulse 0.9s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    /* Markdown */
+    #answerContent h1,
+    #answerContent h2,
+    #answerContent h3 { color: white; font-weight: 600; margin: 12px 0 6px; }
+    #answerContent h1 { font-size: 15px; }
+    #answerContent h2 { font-size: 14px; }
+    #answerContent h3 { font-size: 13px; }
+    #answerContent p  { margin-bottom: 8px; line-height: 1.6; color: #ddd; font-size: 13px; }
+    #answerContent ul,
+    #answerContent ol { padding-left: 18px; margin-bottom: 8px; }
+    #answerContent li  { margin-bottom: 3px; line-height: 1.5; color: #ddd; font-size: 13px; }
+    #answerContent strong { color: white; }
+    #answerContent em    { color: #bbb; }
+    #answerContent code {
+      background: rgba(255,255,255,0.09);
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      color: #86efac;
+    }
+    #answerContent pre {
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 7px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      overflow-x: auto;
+    }
+    #answerContent pre code { background: transparent; padding: 0; color: #e0e0e0; font-size: 12px; }
+    #answerContent table {
+      border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 12px;
+    }
+    #answerContent th,
+    #answerContent td { border: 1px solid rgba(255,255,255,0.12); padding: 5px 9px; text-align: left; }
+    #answerContent th  { background: rgba(255,255,255,0.07); color: white; font-weight: 600; }
+    #answerContent td  { color: #ddd; }
+    #answerContent blockquote {
+      border-left: 3px solid rgba(255,255,255,0.25);
+      padding-left: 10px; margin: 8px 0;
+      color: rgba(255,255,255,0.55);
+      font-style: italic;
+      font-size: 13px;
+    }
+    #answerContent hr { border: none; border-top: 1px solid rgba(255,255,255,0.09); margin: 10px 0; }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-title">✦ Answer</span>
+    <div class="titlebar-actions">
+      <button class="btn-icon" onclick="arrangeAll()">⊞</button>
+      <button class="btn-icon" onclick="clearAnswer()">↺</button>
+      <button class="btn-icon" onclick="closeWin()">✕</button>
+    </div>
+  </div>
+  <div class="content" id="answerContent">
+    <div class="placeholder" id="placeholder">
+      <span>Waiting for question…</span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/plugins/autoloader/prism-autoloader.min.js"></script>
+  <script>
+    let streamBuffer = '';
+
+    function hidePlaceholder() {
+      const p = document.getElementById('placeholder');
+      if (p) p.style.display = 'none';
+    }
+
+    function clearAnswer() {
+      streamBuffer = '';
+      const el = document.getElementById('answerContent');
+      el.innerHTML = '<div class="placeholder" id="placeholder"><span>Waiting for question…</span></div>';
+    }
+
+    function closeWin() {
+      if (window.electronAPI && window.electronAPI.hideLiveAnswerWindow) {
+        window.electronAPI.hideLiveAnswerWindow().catch(() => {});
+      }
+    }
+
+    function arrangeAll() {
+      if (window.electronAPI && window.electronAPI.arrangeWindows) {
+        window.electronAPI.arrangeWindows().catch(() => {});
+      }
+    }
+
+    function renderMarkdown(text) {
+      const el = document.getElementById('answerContent');
+      hidePlaceholder();
+      if (window.marked) {
+        el.innerHTML = marked.parse(text);
+      } else {
+        el.textContent = text;
+      }
+      if (window.Prism) {
+        el.querySelectorAll('pre code').forEach(b => Prism.highlightElement(b));
+      }
+      el.scrollTop = el.scrollHeight;
+    }
+
+    // ── IPC event listeners ──────────────────────────────────────────────
+    if (window.electronAPI) {
+
+      // Stream start
+      window.electronAPI.onTranscriptionLlmResponseStart &&
+        window.electronAPI.onTranscriptionLlmResponseStart(() => {
+          streamBuffer = '';
+          hidePlaceholder();
+          const el = document.getElementById('answerContent');
+          el.innerHTML = '<em style="color:rgba(255,255,255,0.35);font-size:13px;">Thinking<span class="streaming-dot"></span></em>';
+        });
+
+      // Stream chunks
+      window.electronAPI.onTranscriptionLlmResponseChunk &&
+        window.electronAPI.onTranscriptionLlmResponseChunk((event, data) => {
+          if (data && data.delta) {
+            streamBuffer += data.delta;
+            hidePlaceholder();
+            const el = document.getElementById('answerContent');
+            el.textContent = streamBuffer;
+            el.scrollTop = el.scrollHeight;
+          }
+        });
+
+      // Final — full markdown render
+      window.electronAPI.onTranscriptionLlmResponse &&
+        window.electronAPI.onTranscriptionLlmResponse((event, data) => {
+          if (data && data.response) {
+            renderMarkdown(data.response);
+          }
+        });
+
+      // Screenshot / display-llm-response
+      window.electronAPI.onDisplayLlmResponse &&
+        window.electronAPI.onDisplayLlmResponse((event, data) => {
+          const text = data && (data.content || data.response);
+          if (text) {
+            const el = document.getElementById('answerContent');
+            renderMarkdown(text);
+            el.scrollTop = 0;
+          }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.electronAPI && window.electronAPI.notifyLiveAnswerWindowReady) {
+        window.electronAPI.notifyLiveAnswerWindowReady().catch(() => {});
+      }
+    });
+  </script>
+</body>
+</html>
