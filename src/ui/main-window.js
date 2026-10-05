@@ -252,7 +252,7 @@ class MainWindowUI {
             if (commandTab && window.electronAPI && window.electronAPI.resizeWindow) {
                 const rect = commandTab.getBoundingClientRect();
                 const width = Math.ceil(rect.width);
-                let height = Math.ceil(rect.height);
+                let height = 35; // Enforce base height to prevent unexpected growth
 
                 // If shortcuts popover is visible, extend height to fit it
                 if (this.shortcutsPopover && this.shortcutsPopover.classList.contains('is-open')) {

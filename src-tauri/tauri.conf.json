@@ -1,8 +1,8 @@
 {
     "$schema":  "https://schema.tauri.app/config/2",
-    "productName":  "tauri-app",
+    "productName":  "OpenMic",
     "version":  "0.1.0",
-    "identifier":  "com.admin.tauri-app",
+    "identifier":  "com.admin.openmic",
     "build":  {
                   "frontendDist":  "../src"
               },
@@ -10,9 +10,9 @@
                 "withGlobalTauri":  true,
                 "windows":  [
                                 {
-                                    "title":  "OpenCluely",
+                                    "title":  "OpenMic",
                                     "contentProtected": true,
-                                    "width":  500,
+                                    "width":  700,
                                     "height":  35,
                                     "transparent":  true,
                                     "decorations":  false,

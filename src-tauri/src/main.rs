@@ -562,7 +562,7 @@ fn arrange_windows(app: AppHandle) {
             let _sh = mon.height().unwrap_or(1080) as f64;
 
             // Bar: use its current logical width, horizontal center, near top
-            let mut bar_w = 500.0_f64;
+            let mut bar_w = 700.0_f64;
             let bar_h = 35.0_f64;
             if let Some(win) = app.get_webview_window("main") {
                 if let Ok(size) = win.outer_size() {
