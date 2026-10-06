@@ -1,7 +1,6 @@
 /* Common Styles for OpenCluely UI Components */
 
-/* Font imports */
-@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+/* FontAwesome is loaded via local vendor file in each HTML page */
 
 /* Base styles */
 body {

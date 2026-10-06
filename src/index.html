@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <title>OpenMic</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="./assests/vendor/fontawesome/all.min.css" rel="stylesheet" />
     <link href="./styles/common.css" rel="stylesheet" />
     <style>
       body {
@@ -36,7 +36,7 @@
         flex-wrap: nowrap;
         overflow: visible;
         border: 1px solid rgba(255, 255, 255, 0.15);
-  width: 100%;
+  width: max-content;
   /* Allow horizontal collapse to approximately one icon's width */
   min-width: 60px;
       }
@@ -52,8 +52,6 @@
         cursor: default;
         transition: all 0.2s ease;
         -webkit-app-region: no-drag;
-  /* Allow items to shrink so the bar can collapse to one icon width */
-  flex-shrink: 1;
       }
 
       .command-item:hover {
@@ -391,15 +389,15 @@
         </select>
       </div>
       <div class="command-separator"></div>
-      <div class="command-item" id="infoButton" title="Shortcuts Info">
+      <div class="command-item" id="infoButton">
         <i class="fas fa-circle-info"></i>
       </div>
       <div class="command-separator"></div>
-      <div class="command-item" id="settingsButton" title="Settings">
+      <div class="command-item" id="settingsButton">
         <i class="fas fa-cog"></i>
       </div>
       <div class="command-separator"></div>
-      <div class="command-item" id="quitButton" title="Quit Application" style="color: rgba(255, 71, 87, 0.9);">
+      <div class="command-item" id="quitButton" style="color: rgba(255, 71, 87, 0.9);">
         <i class="fas fa-power-off"></i>
       </div>
       <div class="status-dot non-interactive" id="statusDot"></div>

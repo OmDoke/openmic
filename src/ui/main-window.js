@@ -61,6 +61,22 @@ class MainWindowUI {
                 window.electronAPI.notifyMainWindowReady();
             }
 
+            // Setup ResizeObserver to automatically resize window when content changes (e.g. fonts load)
+            const commandTab = document.querySelector('.command-tab');
+            if (commandTab) {
+                const resizeObserver = new ResizeObserver(() => {
+                    this.resizeWindowToContent();
+                });
+                resizeObserver.observe(commandTab);
+            }
+            
+            // Also explicitly wait for fonts to load
+            if (document.fonts) {
+                document.fonts.ready.then(() => {
+                    this.resizeWindowToContent();
+                });
+            }
+
             // Auto-arrange all windows into their default layout positions
             setTimeout(() => {
                 if (window.electronAPI && window.electronAPI.arrangeWindows) {
@@ -246,30 +262,21 @@ class MainWindowUI {
     }
 
     resizeWindowToContent() {
-        // Wait for DOM to fully render
-        setTimeout(() => {
-            const commandTab = document.querySelector('.command-tab');
-            if (commandTab && window.electronAPI && window.electronAPI.resizeWindow) {
-                const rect = commandTab.getBoundingClientRect();
-                const width = Math.ceil(rect.width);
-                let height = 35; // Enforce base height to prevent unexpected growth
+        const commandTab = document.querySelector('.command-tab');
+        if (commandTab && window.electronAPI && window.electronAPI.resizeWindow) {
+            const rect = commandTab.getBoundingClientRect();
+            const width = Math.ceil(rect.width);
+            let height = 35; // Enforce base height to prevent unexpected growth
 
-                // If shortcuts popover is visible, extend height to fit it
-                if (this.shortcutsPopover && this.shortcutsPopover.classList.contains('is-open')) {
-                    const popRect = this.shortcutsPopover.getBoundingClientRect();
-                    // popover is positioned below the bar (top:36px), add that plus its height and a small margin
-                    height = Math.max(height, Math.ceil(36 + popRect.height + 8));
-                }
-                
-                logger.debug('Resizing window to content', {
-                    width,
-                    height,
-                    component: 'MainWindowUI'
-                });
-                
-                window.electronAPI.resizeWindow(width, height);
+            // If shortcuts popover is visible, extend height to fit it
+            if (this.shortcutsPopover && this.shortcutsPopover.classList.contains('is-open')) {
+                const popRect = this.shortcutsPopover.getBoundingClientRect();
+                height = Math.max(height, Math.ceil(36 + popRect.height + 8));
             }
-        }, 100);
+            
+            logger.debug('Resizing window to content', { width, height, component: 'MainWindowUI' });
+            window.electronAPI.resizeWindow(width, height);
+        }
     }
 
     setupElements() {
@@ -439,10 +446,11 @@ class MainWindowUI {
         // Quit Button
         if (this.quitButton) {
             this.quitButton.addEventListener('click', (e) => {
-                if (!this.isInteractive) return;
                 e.stopPropagation();
                 if (window.electronAPI && window.electronAPI.quit) {
                     window.electronAPI.quit();
+                } else {
+                    console.error("electronAPI.quit not found");
                 }
             });
         }
