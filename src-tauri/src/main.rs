@@ -155,7 +155,7 @@ fn disable_window_interaction(app: AppHandle, state: State<'_, AppState>) {
 }
 
 #[tauri::command]
-fn switch_to_chat(app: tauri::AppHandle) {
+async fn switch_to_chat(app: tauri::AppHandle) {
     switch_to_chat_window(app.clone());
     switch_to_live_answer_window(app);
 }
@@ -173,6 +173,16 @@ fn get_settings(app: tauri::AppHandle) -> serde_json::Value {
         }
     }
     serde_json::json!({})
+}
+
+fn get_env_or_setting(app: &tauri::AppHandle, setting_key: &str, env_key: &str, default: &str) -> String {
+    let settings = get_settings(app.clone());
+    if let Some(val) = settings.get(setting_key).and_then(|v| v.as_str()) {
+        if !val.trim().is_empty() {
+            return val.trim().to_string();
+        }
+    }
+    std::env::var(env_key).unwrap_or_else(|_| default.to_string()).trim().to_string()
 }
 
 #[tauri::command]
@@ -224,8 +234,8 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
 
         // Live-reload .env so users don't have to restart the app
         let _ = dotenvy::dotenv_override().ok();
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default().trim().to_string();
-        let model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string()).trim().to_string();
+        let api_key = get_env_or_setting(&app, "geminiKey", "GEMINI_API_KEY", "");
+        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash");
         println!("API Key empty? {}", api_key.is_empty());
         println!("Model: {}", model);
         if api_key.is_empty() { 
@@ -263,12 +273,16 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
             }
         });
 
-        let models_to_try = vec![
+        let mut models_to_try = vec![
             model.clone(),
             "gemini-3.5-flash".to_string(),
+            "gemini-3.5-flash-lite".to_string(),
+            "gemini-2.5-flash".to_string(),
+            "gemini-2.5-pro".to_string(),
             "gemini-flash-latest".to_string(),
             "gemini-pro-latest".to_string()
         ];
+        models_to_try.dedup();
         
         for try_model in models_to_try {
             let url = format!("https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}", try_model, api_key);
@@ -636,10 +650,10 @@ fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) {
 }
 
 #[tauri::command]
-fn show_settings(app: tauri::AppHandle) {
+async fn show_settings(app: tauri::AppHandle) {
     use tauri::Manager;
     if app.get_webview_window("settings").is_none() {
-        let _ = tauri::WebviewWindowBuilder::new(
+        let window_result = tauri::WebviewWindowBuilder::new(
             &app,
             "settings",
             tauri::WebviewUrl::App("settings.html".into())
@@ -653,6 +667,9 @@ fn show_settings(app: tauri::AppHandle) {
         .content_protected(true)
         .skip_taskbar(true)
         .build();
+        
+        if let Ok(window) = window_result {
+        }
     } else {
         if let Some(window) = app.get_webview_window("settings") {
             let _ = window.show();
@@ -845,11 +862,11 @@ fn process_speech_segment(app: AppHandle, buf: Vec<u8>) {
         let wav_data = cursor.into_inner();
         println!("WAV encoded, size: {} bytes", wav_data.len());
 
-        let deepgram_key = std::env::var("DEEPGRAM_SPEECH_KEY").unwrap_or_default();
-        let deepgram_model = std::env::var("DEEPGRAM_SPEECH_MODEL").unwrap_or_else(|_| "nova-3".to_string());
+        let deepgram_key = get_env_or_setting(&app, "deepgramSpeechKey", "DEEPGRAM_SPEECH_KEY", "");
+        let deepgram_model = get_env_or_setting(&app, "deepgramSpeechModel", "DEEPGRAM_SPEECH_MODEL", "nova-3");
         
-        let groq_key = std::env::var("GROQ_SPEECH_KEY").unwrap_or_default();
-        let groq_model = std::env::var("GROQ_SPEECH_MODEL").unwrap_or_else(|_| "whisper-large-v3".to_string());
+        let groq_key = get_env_or_setting(&app, "groqSpeechKey", "GROQ_SPEECH_KEY", "");
+        let groq_model = get_env_or_setting(&app, "groqSpeechModel", "GROQ_SPEECH_MODEL", "whisper-large-v3");
 
         let client = reqwest::Client::new();
         let mut transcription_text: Option<String> = None;
@@ -1063,8 +1080,8 @@ async fn send_chat_message_internal(app: AppHandle, state: &State<'_, AppState>,
     tauri::async_runtime::spawn(async move {
         // Live-reload .env so users don't have to restart the app
         let _ = dotenvy::dotenv_override().ok();
-        let api_key = std::env::var("GEMINI_API_KEY").unwrap_or_default().trim().to_string();
-        let model = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-3.5-flash".to_string()).trim().to_string();
+        let api_key = get_env_or_setting(&app, "geminiKey", "GEMINI_API_KEY", "");
+        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash");
         
         let emit_error = {
             let app = app.clone();
@@ -1095,12 +1112,16 @@ async fn send_chat_message_internal(app: AppHandle, state: &State<'_, AppState>,
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
             
-        let models_to_try = vec![
+        let mut models_to_try = vec![
             model.clone(),
             "gemini-3.5-flash".to_string(),
+            "gemini-3.5-flash-lite".to_string(),
+            "gemini-2.5-flash".to_string(),
+            "gemini-2.5-pro".to_string(),
             "gemini-flash-latest".to_string(),
             "gemini-pro-latest".to_string()
         ];
+        models_to_try.dedup();
 
         let mut last_error_msg = String::new();
 

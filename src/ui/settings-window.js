@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {    
+function initSettingsWindow() {    
     const logger = {
         info: (...args) => console.log('[SettingsWindowUI]', ...args)
     };
@@ -39,7 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close button handler
     if (closeButton) {
         closeButton.addEventListener('click', () => {
-            window.api.send('close-settings');
+            if (window.electronAPI && window.electronAPI.closeWindow) {
+                window.electronAPI.closeWindow();
+            } else {
+                window.close();
+            }
         });
     }
 
@@ -73,9 +77,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadSettingsIntoUI = (settings) => {
         if (settings.speechProvider && speechProviderSelect) speechProviderSelect.value = settings.speechProvider;
         if (settings.captureSource && captureSourceSelect) captureSourceSelect.value = settings.captureSource;
-        // Always set the input value, even if empty, so the user sees what's
-        // currently configured (including env-derived defaults). Previously
-        // empty strings were skipped which left stale UI values.
         if (groqSpeechKeyInput) groqSpeechKeyInput.value = settings.groqSpeechKey || '';
         if (groqSpeechModelInput) groqSpeechModelInput.value = settings.groqSpeechModel || '';
         if (deepgramSpeechKeyInput) deepgramSpeechKeyInput.value = settings.deepgramSpeechKey || '';
@@ -148,9 +149,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateSpeechFieldStates = () => {
         const provider = speechProviderSelect ? speechProviderSelect.value : 'disabled';
 
-        // Show/hide provider-specific field groups instead of just disabling
-        // them. This keeps the settings UI clean â€” only the relevant fields
-        // for the selected provider are visible.
         const groqGroup = document.getElementById('groqFields');
         const deepgramGroup = document.getElementById('deepgramFields');
         if (groqGroup) {
@@ -197,11 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (codingLanguageSelect) {
         codingLanguageSelect.addEventListener('change', (e) => {
             const lang = e.target.value;
-            // use electronAPI so main broadcast is consistent
             if (window.electronAPI && window.electronAPI.saveSettings) {
                 window.electronAPI.saveSettings({ codingLanguage: lang });
             } else {
-                // fallback
                 saveSettings();
             }
         });
@@ -211,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeSkillSelect) {
         activeSkillSelect.addEventListener('change', (e) => {
             saveSettings();
-            // Also update the main window
             window.api.send('update-skill', e.target.value);
         });
     }
@@ -243,7 +238,6 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             img.onerror = () => {
                 console.error('Failed to load icon:', icon.src);
-                // Try alternative paths
                 const altPaths = [
                     `./assests/${icon.key}.png`,
                     `./assets/icons/${icon.key}.png`,
@@ -275,20 +269,14 @@ document.addEventListener('DOMContentLoaded', () => {
             iconElement.appendChild(img);
             iconElement.appendChild(label);
             
-            // Click handler for icon selection
             iconElement.addEventListener('click', () => {                
-                // Remove selection from all icons
                 iconGrid.querySelectorAll('.icon-option').forEach(opt => {
                     opt.classList.remove('selected');
                 });
                 
-                // Add selection to clicked icon
                 iconElement.classList.add('selected');
-                
-                // Save the selection - this should trigger the app icon change
                 window.api.send('save-settings', { selectedIcon: icon.key });
                 
-                // Show visual feedback
                 iconElement.style.transform = 'scale(0.95)';
                 setTimeout(() => {
                     iconElement.style.transform = 'scale(1)';
@@ -299,18 +287,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // Initialize icon grid
     initializeIconGrid();
 
-    // Request settings on load
     setTimeout(() => {
         requestCurrentSettings();
     }, 200);
 
-    // ESC key to close
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-            window.api.send('close-settings');
+            if (window.electronAPI && window.electronAPI.closeWindow) {
+                window.electronAPI.closeWindow();
+            } else {
+                window.close();
+            }
         }
     });
-}); 
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSettingsWindow);
+} else {
+    initSettingsWindow();
+} 

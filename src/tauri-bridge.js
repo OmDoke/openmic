@@ -68,6 +68,6 @@ window.electronAPI = {
 };
 
 window.api = {
-  send: (channel, data) => invoke('legacy_send', { channel, data }),
+  send: (channel, data = null) => invoke('legacy_send', { channel, data }),
   receive: (channel, callback) => listen(channel, (e) => callback(e, e.payload))
 };
