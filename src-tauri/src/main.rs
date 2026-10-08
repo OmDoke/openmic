@@ -63,7 +63,7 @@ fn switch_to_llm_response_window(app: AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     } else {
-        let _win = tauri::WebviewWindowBuilder::new(
+        if let Ok(win) = tauri::WebviewWindowBuilder::new(
             &app,
             "llmResponseWindow",
             tauri::WebviewUrl::App("llm-response.html".into())
@@ -75,10 +75,11 @@ fn switch_to_llm_response_window(app: AppHandle) {
         .always_on_top(true)
         .resizable(true)
         .skip_taskbar(true)
-        .visible(false)
+        .visible(true)
         .content_protected(true)
-        .build()
-        .unwrap();
+        .build() {
+            let _ = win.set_focus();
+        }
     }
 }
 
@@ -182,7 +183,30 @@ fn get_env_or_setting(app: &tauri::AppHandle, setting_key: &str, env_key: &str, 
             return val.trim().to_string();
         }
     }
-    std::env::var(env_key).unwrap_or_else(|_| default.to_string()).trim().to_string()
+    if let Ok(val) = std::env::var(env_key) {
+        if !val.trim().is_empty() {
+            return val.trim().to_string();
+        }
+    }
+    let fallback_paths = [
+        "c:\\Users\\Admin\\Desktop\\openmic\\.env",
+        ".env",
+    ];
+    for p in &fallback_paths {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.starts_with('#') || !line.contains('=') { continue; }
+                let mut parts = line.splitn(2, '=');
+                if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                    if k.trim() == env_key && !v.trim().is_empty() {
+                        return v.trim().to_string();
+                    }
+                }
+            }
+        }
+    }
+    default.to_string()
 }
 
 #[tauri::command]
@@ -191,8 +215,35 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
     let prompt = get_system_prompt("dsa"); // Hardcoded to dsa as requested
     
     tauri::async_runtime::spawn(async move {
-        let emit_error = |err_msg: &str| {
-            let _ = app.emit("llm-error", serde_json::json!({ "error": err_msg }));
+        let emit_error = {
+            let app = app.clone();
+            move |err_msg: &str| {
+                let msg = err_msg.to_string();
+                let app_c = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                    let _ = app_c.emit("llm-error", serde_json::json!({ "error": msg.clone() }));
+                    if let Some(win) = app_c.get_webview_window("llmResponseWindow") {
+                        let _ = win.show();
+                        let escaped_err = serde_json::to_string(&msg).unwrap_or_else(|_| "\"API Error\"".to_string());
+                        let err_js = format!(
+                            r#"setTimeout(() => {{
+                                if (typeof hideLoadingState === 'function') hideLoadingState();
+                                const md = document.getElementById('full-markdown');
+                                if (md) md.innerHTML = '<div style="color: #ef4444; padding: 20px;"><h2 style="color: #ef4444; margin-top: 0;">Error</h2><p>' + {} + '</p></div>';
+                                const split = document.getElementById('split-layout');
+                                if (split) split.classList.add('hidden');
+                                const full = document.getElementById('full-content');
+                                if (full) full.classList.remove('hidden');
+                                const resp = document.getElementById('response-content');
+                                if (resp) resp.classList.remove('hidden');
+                            }}, 100);"#,
+                            escaped_err
+                        );
+                        let _ = win.eval(&err_js);
+                    }
+                });
+            }
         };
 
         let b64 = {
@@ -235,11 +286,11 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
         // Live-reload .env so users don't have to restart the app
         let _ = dotenvy::dotenv_override().ok();
         let api_key = get_env_or_setting(&app, "geminiKey", "GEMINI_API_KEY", "");
-        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash");
+        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash-lite");
         println!("API Key empty? {}", api_key.is_empty());
         println!("Model: {}", model);
         if api_key.is_empty() { 
-            emit_error("GEMINI_API_KEY environment variable is not set!");
+            emit_error("GEMINI_API_KEY is not set! Click Settings (gear icon) on the top bar and enter your Gemini API Key.");
             return; 
         }
 
@@ -275,10 +326,9 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
 
         let mut models_to_try = vec![
             model.clone(),
-            "gemini-3.5-flash".to_string(),
             "gemini-3.5-flash-lite".to_string(),
-            "gemini-2.5-flash".to_string(),
-            "gemini-2.5-pro".to_string(),
+            "gemini-3.1-flash-lite".to_string(),
+            "gemini-3.5-flash".to_string(),
             "gemini-flash-latest".to_string(),
             "gemini-pro-latest".to_string()
         ];
@@ -293,7 +343,7 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
                 Ok(mut r) => {
                     let status = r.status().as_u16();
                     println!("Headers received! Status: {}", status);
-                    if status == 503 || status == 429 {
+                    if status == 503 || status == 429 || status == 404 || status == 400 {
                         println!("API returned {} for {}. Trying fallback model...", status, try_model);
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                         continue;
@@ -318,8 +368,8 @@ fn take_screenshot(app: AppHandle, state: State<'_, AppState>) {
                                 first_chunk_processed = true;
                                 let trimmed = text.trim_start();
                                 if trimmed.starts_with('{') || trimmed.starts_with("[\n  {\n    \"error\"") {
-                                    if text.contains("\"code\": 503") || text.contains("\"code\":503") || text.contains("\"status\": \"UNAVAILABLE\"") {
-                                        println!("API returned JSON 503 for {}. Trying fallback model...", try_model);
+                                    if text.contains("\"code\": 503") || text.contains("\"code\":503") || text.contains("\"code\": 429") || text.contains("\"code\": 404") || text.contains("\"code\": 400") || text.contains("\"status\": \"UNAVAILABLE\"") || text.contains("\"status\": \"NOT_FOUND\"") {
+                                        println!("API returned JSON error for {}. Trying fallback model...", try_model);
                                         is_retryable_error = true;
                                         break;
                                     } else {
@@ -643,7 +693,22 @@ fn save_settings(app: tauri::AppHandle, settings: serde_json::Value) {
     if let Ok(path) = app.path().app_data_dir() {
         let _ = std::fs::create_dir_all(&path);
         let settings_path = path.join("settings.json");
-        if let Ok(json) = serde_json::to_string_pretty(&settings) {
+
+        let mut current_settings = if let Ok(data) = std::fs::read_to_string(&settings_path) {
+            serde_json::from_str::<serde_json::Value>(&data).unwrap_or_else(|_| serde_json::json!({}))
+        } else {
+            serde_json::json!({})
+        };
+
+        if let (Some(current_obj), Some(new_obj)) = (current_settings.as_object_mut(), settings.as_object()) {
+            for (k, v) in new_obj {
+                current_obj.insert(k.clone(), v.clone());
+            }
+        } else {
+            current_settings = settings;
+        }
+
+        if let Ok(json) = serde_json::to_string_pretty(&current_settings) {
             let _ = std::fs::write(settings_path, json);
         }
     }
@@ -668,8 +733,7 @@ async fn show_settings(app: tauri::AppHandle) {
         .skip_taskbar(true)
         .build();
         
-        if let Ok(window) = window_result {
-        }
+        let _ = window_result;
     } else {
         if let Some(window) = app.get_webview_window("settings") {
             let _ = window.show();
@@ -696,7 +760,23 @@ fn toggle_answer_hold(app: AppHandle, state: State<'_, AppState>) {
 #[tauri::command] fn copy_to_clipboard(_text: String) {}
 
 #[tauri::command]
-fn legacy_send(_app: AppHandle, _state: State<'_, AppState>, _channel: String, _data: serde_json::Value) {
+fn legacy_send(app: AppHandle, state: State<'_, AppState>, channel: String, data: serde_json::Value) {
+    match channel.as_str() {
+        "save-settings" => {
+            save_settings(app, data);
+        }
+        "update-skill" => {
+            if let Some(skill) = data.as_str() {
+                update_active_skill(state, skill.to_string());
+            }
+        }
+        "quit-app" => {
+            app.exit(0);
+        }
+        _ => {
+            println!("Unhandled legacy_send channel: {}", channel);
+        }
+    }
 }
 
 #[tauri::command]
@@ -1081,7 +1161,7 @@ async fn send_chat_message_internal(app: AppHandle, state: &State<'_, AppState>,
         // Live-reload .env so users don't have to restart the app
         let _ = dotenvy::dotenv_override().ok();
         let api_key = get_env_or_setting(&app, "geminiKey", "GEMINI_API_KEY", "");
-        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash");
+        let model = get_env_or_setting(&app, "geminiModel", "GEMINI_MODEL", "gemini-3.5-flash-lite");
         
         let emit_error = {
             let app = app.clone();
@@ -1093,7 +1173,7 @@ async fn send_chat_message_internal(app: AppHandle, state: &State<'_, AppState>,
 
         if api_key.is_empty() { 
             println!("GEMINI_API_KEY environment variable is not set!");
-            emit_error("GEMINI_API_KEY environment variable is not set!");
+            emit_error("GEMINI_API_KEY is not set! Click Settings (gear icon) on the top bar and enter your Gemini API Key.");
             return; 
         }
 
@@ -1114,10 +1194,9 @@ async fn send_chat_message_internal(app: AppHandle, state: &State<'_, AppState>,
             
         let mut models_to_try = vec![
             model.clone(),
-            "gemini-3.5-flash".to_string(),
             "gemini-3.5-flash-lite".to_string(),
-            "gemini-2.5-flash".to_string(),
-            "gemini-2.5-pro".to_string(),
+            "gemini-3.1-flash-lite".to_string(),
+            "gemini-3.5-flash".to_string(),
             "gemini-flash-latest".to_string(),
             "gemini-pro-latest".to_string()
         ];
