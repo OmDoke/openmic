@@ -592,6 +592,30 @@ async fn stop_speech_recognition(app: AppHandle, state: State<'_, AppState>) -> 
     
     if buf.len() > 16000 {
         process_speech_segment(app.clone(), buf);
+    } else {
+        let pending_text = {
+            let mut t_buf = state.transcription_buffer.lock().unwrap();
+            let mut count = state.transcription_count.lock().unwrap();
+            if !t_buf.trim().is_empty() {
+                let t = t_buf.clone();
+                t_buf.clear();
+                *count = 0;
+                Some(t)
+            } else {
+                None
+            }
+        };
+
+        if let Some(final_text) = pending_text {
+            switch_to_chat_window(app.clone());
+            switch_to_live_answer_window(app.clone());
+            let _ = app.emit("transcription-received", serde_json::json!({ "text": final_text.clone() }));
+            let app_c = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let state = app_c.state::<AppState>();
+                let _ = send_chat_message_internal(app_c.clone(), &state, final_text, true).await;
+            });
+        }
     }
     
     let _ = app.emit("speech-status", json!({ "status": "Recording stopped", "available": true }));
@@ -889,7 +913,7 @@ fn send_audio_chunk_internal(app: &AppHandle, state: &State<'_, AppState>, chunk
         *silence_ms += chunk_ms;
     }
 
-    let paused_long_enough = *silence_ms >= 700.0;
+    let paused_long_enough = *silence_ms >= 450.0;
     let have_real_speech = *speech_ms >= 150.0;
     
     // Hard cap chunk size based on actual buffer bytes to prevent Deepgram SLOW_UPLOAD timeouts
@@ -913,6 +937,82 @@ fn send_audio_chunk_internal(app: &AppHandle, state: &State<'_, AppState>, chunk
         *speech_ms = 0.0;
         *silence_ms = 0.0;
     }
+}
+
+fn is_interview_question(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.ends_with('?') {
+        return true;
+    }
+
+    let lower = trimmed.to_lowercase();
+    let words: Vec<&str> = lower.split_whitespace().collect();
+    if words.is_empty() {
+        return false;
+    }
+
+    let starters = [
+        "what", "why", "how", "when", "where", "which", "who", "whom", "whose",
+        "can", "could", "would", "should", "will", "is", "are", "do", "does", "did",
+        "explain", "describe", "tell", "elaborate", "clarify", "define",
+        "compare", "differentiate", "distinguish",
+        "design", "implement", "solve", "write", "code", "optimize", "refactor",
+        "walk", "give", "show",
+    ];
+
+    let first_word = words[0].trim_matches(|c: char| !c.is_alphabetic());
+    for starter in &starters {
+        if first_word == *starter {
+            return true;
+        }
+    }
+
+    if words.len() >= 2 {
+        let first_two = format!(
+            "{} {}",
+            words[0].trim_matches(|c: char| !c.is_alphabetic()),
+            words[1].trim_matches(|c: char| !c.is_alphabetic())
+        );
+        let phrase_starters = [
+            "can you", "could you", "would you", "tell me", "walk me",
+            "how would", "how do", "how can", "how to", "how did",
+            "what is", "what are", "what does", "what would",
+            "why is", "why do", "why does", "why would",
+            "difference between", "compare and", "in what", "which one",
+        ];
+        for phrase in &phrase_starters {
+            if first_two == *phrase {
+                return true;
+            }
+        }
+    }
+
+    let key_phrases = [
+        "difference between",
+        "time complexity",
+        "space complexity",
+        "best approach",
+        "trade-off",
+        "trade-offs",
+        "pros and cons",
+        "pros & cons",
+        "how would you",
+        "how do you",
+        "what are the",
+        "what is the",
+        "can you explain",
+        "could you explain",
+        "tell me about",
+        "walk through",
+    ];
+
+    for phrase in &key_phrases {
+        if lower.contains(phrase) {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn process_speech_segment(app: AppHandle, buf: Vec<u8>) {
@@ -1046,10 +1146,17 @@ fn process_speech_segment(app: AppHandle, buf: Vec<u8>) {
                     buf.push_str(text.trim());
                     *count += 1;
                     
-                    let is_question = text.trim().ends_with('?');
-                    println!("Sentence buffered. Count: {}/3. Is question: {}", count, is_question);
+                    let is_question = is_interview_question(&text) || is_interview_question(&buf);
+                    let word_count = buf.split_whitespace().count();
+                    let has_substance = word_count >= 3;
+                    let is_recording = *state.speech.is_recording.lock().unwrap();
+                    println!("Sentence buffered: '{}'. Total count: {}. Word count: {}. Is question: {}", text.trim(), count, word_count, is_question);
                     
-                    if *count >= 3 || is_question {
+                    // Flush immediately if:
+                    // 1) An interview question or command is detected and has at least 3 words of substance
+                    // 2) Safety cap: 3 sentences have accumulated (preamble / context safety net)
+                    // 3) Recording has ended, so flush whatever is remaining in the buffer
+                    if (!is_recording && word_count > 0) || *count >= 3 || (is_question && has_substance) {
                         combined_text = Some(buf.clone());
                         println!("Buffer threshold reached! Flushing to Gemini: {:?}", combined_text);
                         buf.clear();
